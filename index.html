@@ -56,7 +56,7 @@ const i=[[0,1850,-20,-5,0],[0,920,-50,-35,0],[1,4200,-70,-40,0],[1,1300,-5,25,0]
 return{customers:c,invoices:i}}
 async function api(body){const u=cfg().url;const r=await fetch(u,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({...body,token:cfg().token})});return r.json()}
 async function load(){const u=cfg().url;$('#mode').textContent=u?'Synced to Google Sheets':'Demo mode (this browser only)';
-if(u){try{const d=await api({action:'load'});S=d.customers?d:S}catch(e){alert('Could not reach your Google Sheet. Check Settings.')}}
+if(u){try{const d=await api({action:'load'});if(d.error)alert('Connected to your script, but the access token does not match the TOKEN in Script Properties.');else S={customers:d.customers||[],invoices:d.invoices||[]}}catch(e){alert('Could not reach your script ('+e.message+'). Check the Web App URL in Settings.')}}
 else{const l=localStorage.getItem('apex_data');S=l?JSON.parse(l):seed()}}
 async function save(){localStorage.setItem('apex_data',JSON.stringify(S));if(cfg().url)try{await api({action:'save',data:S})}catch(e){}render()}
 const cust=id=>S.customers.find(c=>c.id==id)||{name:'(deleted)',email:''};

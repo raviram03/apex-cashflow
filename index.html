@@ -58,7 +58,7 @@ async function api(body){const u=cfg().url;const r=await fetch(u,{method:'POST',
 async function load(){const u=cfg().url;$('#mode').textContent=u?'Synced to Google Sheets':'Demo mode (this browser only)';
 if(u){try{const d=await api({action:'load'});if(d.error)alert('Connected to your script, but the access token does not match the TOKEN in Script Properties.');else S={customers:d.customers||[],invoices:d.invoices||[]}}catch(e){alert('Could not reach your script ('+e.message+'). Check the Web App URL in Settings.')}}
 else{const l=localStorage.getItem('apex_data');S=l?JSON.parse(l):seed()}}
-async function save(){localStorage.setItem('apex_data',JSON.stringify(S));if(cfg().url)try{await api({action:'save',data:S})}catch(e){}render()}
+async function save(){localStorage.setItem('apex_data',JSON.stringify(S));if(cfg().url)try{const r=await api({action:'save',data:S});if(r.error)alert('Saved in this browser only. Your access token does not match the TOKEN in Script Properties.')}catch(e){alert('Saved in this browser only ('+e.message+'). Check the Web App URL in Settings.')}render()}
 const cust=id=>S.customers.find(c=>c.id==id)||{name:'(deleted)',email:''};
 const od=i=>i.paid?0:Math.max(0,diff(T,i.due));
 const st=i=>i.paid?'Paid':i.due<T?'Overdue':diff(i.due,T)<=7?'Due':'Current';

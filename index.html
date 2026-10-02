@@ -43,12 +43,12 @@ label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
 <nav id="nav"></nav><main id="app"></main>
 <dialog id="dlg"></dialog>
 <script>
-const $=s=>document.querySelector(s),T=new Date().toISOString().slice(0,10);
+const $=s=>document.querySelector(s),ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),T=ymd(new Date());
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const $$=n=>'$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2});
-const addD=(d,n)=>{const x=new Date(d+'T00:00');x.setDate(x.getDate()+n);return x.toISOString().slice(0,10)};
+const addD=(d,n)=>{const x=new Date(d+'T00:00');x.setDate(x.getDate()+n);return ymd(x)};
 const diff=(a,b)=>Math.round((new Date(a+'T00:00')-new Date(b+'T00:00'))/864e5);
-let S={customers:[],invoices:[]},view='dash',charts=[],ui={q:'',f:'all'};
+let REV='',saveQ=Promise.resolve(),S={customers:[],invoices:[]},view='dash',charts=[],ui={q:'',f:'all'};
 const cfg=()=>{try{return JSON.parse(localStorage.getItem('apex_cfg'))||{}}catch(e){return{}}};
 const uid=()=>Math.random().toString(36).slice(2,9);
 function seed(){const c=[['Brightline Plumbing','ap@brightline.com'],['Harbor Café Group','owner@harborcafe.com'],['Summit Dental','billing@summitdental.com'],['Oakridge Builders','pay@oakridge.com']].map(x=>({id:uid(),name:x[0],email:x[1],phone:''}));
@@ -56,9 +56,14 @@ const i=[[0,1850,-20,-5,0],[0,920,-50,-35,0],[1,4200,-70,-40,0],[1,1300,-5,25,0]
 return{customers:c,invoices:i}}
 async function api(body){const u=cfg().url;const r=await fetch(u,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({...body,token:cfg().token})});return r.json()}
 async function load(){const u=cfg().url;$('#mode').textContent=u?'Synced to Google Sheets':'Demo mode (this browser only)';
-if(u){try{const d=await api({action:'load'});if(d.error)alert('Connected to your script, but the access token does not match the TOKEN in Script Properties.');else S={customers:d.customers||[],invoices:d.invoices||[]}}catch(e){alert('Could not reach your script ('+e.message+'). Check the Web App URL in Settings.')}}
+if(u){try{const d=await api({action:'load'});if(d.error)alert('Connected to your script, but the access token does not match the TOKEN in Script Properties.');else{S={customers:d.customers||[],invoices:d.invoices||[]};REV=d.rev||''}}catch(e){alert('Could not reach your script ('+e.message+'). Check the Web App URL in Settings.')}}
 else{const l=localStorage.getItem('apex_data');S=l?JSON.parse(l):seed()}}
-async function save(){localStorage.setItem('apex_data',JSON.stringify(S));if(cfg().url)try{const r=await api({action:'save',data:S});if(r.error)alert('Saved in this browser only. Your access token does not match the TOKEN in Script Properties.')}catch(e){alert('Saved in this browser only ('+e.message+'). Check the Web App URL in Settings.')}render()}
+function save(){localStorage.setItem('apex_data',JSON.stringify(S));render();if(!cfg().url)return;$('#mode').textContent='Saving…';
+saveQ=saveQ.then(async()=>{try{const r=await api({action:'save',data:S,rev:REV});
+if(r.error=='conflict'){alert('Your data was changed on another device or tab, so this page will reload to show the latest data. Please repeat your last change.');location.reload();return}
+if(r.error){alert('Saved in this browser only. Your access token does not match the TOKEN in Script Properties.');$('#mode').textContent='Not saved';return}
+REV=r.rev||REV;$('#mode').textContent='Synced to Google Sheets'}catch(e){alert('Not saved to Google Sheets ('+e.message+'). Check your internet connection and the Web App URL in Settings.');$('#mode').textContent='Not saved'}})}
+const nextNum=()=>'INV-'+(Math.max(1000,...S.invoices.map(i=>parseInt(String(i.num).replace(/\D/g,''))||0))+1);
 const cust=id=>S.customers.find(c=>c.id==id)||{name:'(deleted)',email:''};
 const od=i=>i.paid?0:Math.max(0,diff(T,i.due));
 const st=i=>i.paid?'Paid':i.due<T?'Overdue':diff(i.due,T)<=7?'Due':'Current';
@@ -85,10 +90,10 @@ function addPay(id){const i=S.invoices.find(x=>x.id==id),a=+$('#pa').value,d=$('
 function invForm(id){if(!S.customers.length){alert('Add a customer first.');return go('cust')}
 const e=S.invoices.find(x=>x.id==id)||{};
 dlg(`<h3>${id?'Edit':'New'} invoice</h3><label>Customer</label><select id="fc">${S.customers.map(c=>`<option value="${c.id}" ${c.id==e.cid?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
-<label>Invoice #</label><input id="fn" value="${esc(e.num||'INV-'+(1001+S.invoices.length))}"><label>Amount ($)</label><input id="fa" type="number" min="0" step="0.01" value="${e.amt||''}">
+<label>Invoice #</label><input id="fn" value="${esc(e.num||nextNum())}"><label>Amount ($)</label><input id="fa" type="number" min="0" step="0.01" value="${e.amt||''}">
 <label>Issued</label><input id="fi" type="date" value="${e.issued||T}"><label>Due date</label><input id="fd" type="date" value="${e.due||addD(T,30)}">
 <div class="row" style="margin-top:14px"><button class="btn" onclick="addInv('${id||''}')">Save invoice</button><button class="btn s" onclick="dlg_.close()">Cancel</button>${e.paid||(e.pays&&e.pays!='[]')?`<button class="btn s" onclick="unpay('${id}')">Clear payments</button>`:''}${id?`<button class="btn r" style="margin-left:auto" onclick="delInv('${id}')">Delete</button>`:''}</div>`)}
-function addInv(id){const a=+$('#fa').value;if(!a)return alert('Enter an amount.');const v={num:$('#fn').value,cid:$('#fc').value,amt:a,issued:$('#fi').value,due:$('#fd').value};
+function addInv(id){const a=+$('#fa').value;if(!(a>0))return alert('Enter an amount greater than zero.');if($('#fd').value<$('#fi').value)return alert('Due date cannot be before the issue date.');if(S.invoices.some(x=>x.id!=id&&String(x.num).toLowerCase()==$('#fn').value.trim().toLowerCase()))return alert('That invoice number already exists.');const v={num:$('#fn').value,cid:$('#fc').value,amt:a,issued:$('#fi').value,due:$('#fd').value};
 if(id)Object.assign(S.invoices.find(x=>x.id==id),v);else S.invoices.push({id:uid(),...v,paid:''});dlg_.close();save()}
 function delInv(id){if(confirm('Delete this invoice? This cannot be undone.')){S.invoices=S.invoices.filter(x=>x.id!=id);dlg_.close();save()}}
 function unpay(id){const i=S.invoices.find(x=>x.id==id);i.paid='';i.pays='';dlg_.close();save()}
@@ -96,7 +101,7 @@ function custForm(id){const e=S.customers.find(c=>c.id==id)||{};dlg(`<h3>${id?'E
 <div class="row" style="margin-top:14px"><button class="btn" onclick="addCust('${id||''}')">Save customer</button><button class="btn s" onclick="dlg_.close()">Cancel</button></div>`)}
 function addCust(id){const n=$('#cn').value.trim();if(!n)return alert('Enter a name.');const v={name:n,email:$('#ce').value,phone:$('#cp').value};if(id)Object.assign(S.customers.find(c=>c.id==id),v);else S.customers.push({id:uid(),...v});dlg_.close();save()}
 function delCust(id){if(S.invoices.some(i=>i.cid==id))return alert('This customer has invoices.');if(confirm('Delete customer?')){S.customers=S.customers.filter(c=>c.id!=id);save()}}
-function csv(rows,name){const t=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/csv'}));a.download=name;a.click()}
+function csv(rows,name){const t=rows.map(r=>r.map(v=>`"${((typeof v=='string'&&/^[=+\-@]/.test(v))?"'":'')+String(v).replace(/"/g,'""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/csv'}));a.download=name;a.click()}
 const expInv=()=>csv([['Invoice','Customer','Amount','Issued','Due','Status','Days overdue','Paid on','Paid','Balance'],...S.invoices.map(i=>[i.num,cust(i.cid).name,i.amt,i.issued,i.due,st(i),od(i),i.paid,paidAmt(i),bal(i)])],'apex-invoices.csv');
 const go=v=>{view=v;render()};
 const NAV=[['dash','Dashboard'],['inv','Invoices'],['cust','Customers'],['age','Aging'],['hist','History'],['set','Settings']];
@@ -122,7 +127,7 @@ if(view=='set'){const c=cfg();h=`<div class="row"><h2>Settings & reports</h2></d
 <h3 style="margin-top:18px">Google Sheets connection</h3><p style="color:var(--mut)">Paste the Web App URL from your Apps Script deployment. Leave empty to stay in demo mode.</p><label>Web App URL</label><input id="su" value="${esc(c.url||'')}" placeholder="https://script.google.com/macros/s/.../exec"><label>Access token (same as in Script Properties)</label><input id="st" value="${esc(c.token||'')}">
 <div class="row" style="margin-top:14px"><button class="btn" onclick="saveCfg()">Save settings</button><button class="btn s" onclick="if(confirm('Reset demo data?')){localStorage.removeItem('apex_data');location.reload()}">Reset demo data</button></div></div>`}
 $('#app').innerHTML=h;
-if(view=='dash'){const ms=[];for(let k=-3;k<=2;k++){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()+k);ms.push(d.toISOString().slice(0,7))}
+if(view=='dash'&&window.Chart){const ms=[];for(let k=-3;k<=2;k++){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()+k);ms.push(ymd(d).slice(0,7))}
 const cs=Chart.defaults;cs.font.family="'Plus Jakarta Sans',system-ui";cs.maintainAspectRatio=false;cs.color=getComputedStyle(document.documentElement).getPropertyValue('--mut');
 charts.push(new Chart($('#c1'),{type:'bar',data:{labels:ms.map(x=>new Date(x+'-15').toLocaleString('en-US',{month:'short'})),datasets:[{label:'Collected',backgroundColor:'#0f9d6b',data:ms.map(x=>colSum(d=>d.slice(0,7)==x))},{label:'Expected (unpaid, by due month)',backgroundColor:'#2f6fed',data:ms.map(x=>sum(o.filter(i=>(i.due<T&&x==m?true:i.due.slice(0,7)==x&&i.due>=T))))}]},options:{plugins:{legend:{position:'bottom'}}}}));
 const B=[0,0,0,0];o.forEach(i=>B[bucket(i)]+=bal(i));
